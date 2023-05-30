@@ -2,131 +2,175 @@ using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
-
-
-
+using Singleplayer.Tiles;
+using Singleplayer.Player;
 
 namespace Singleplayer
 {
-    [System.Serializable]
-    public class Player
+    public class BoardManager : Singleton<BoardManager>
     {
-        public Player(int playerId, string playerName, Color playerColor)
-        {
-            this.playerColor = playerColor;
-            this.playerName = playerName;
-            this.playerId = playerId;
-        }
-        public int playerId;
-        public string playerName;
-        public Color playerColor;
-        public int Score = 0;
-        public bool IsAlive = true;
-    }
-    public class BoardManager : MonoBehaviour
-    {
-        public static BoardManager instance;
-
-        public string MapFilePath = "Map_2023-02-20_21-22-41.json";
+        [SerializeField]
+        private string m_mapFilePath = "Map_2023-05-27_13-58-56.json";
         public bool IsMovementAnimationIsWorking = false;
-        public Tile TilePrefab;
+        
         public int WaveCount = 0;
         public int PlayersCount = 0;
+        public ulong CurrentPlayerTurnIndex;
 
-        public List<Tile> CurrentWaveSessionTiles = new List<Tile>();
-        public List<Tile> NextWaveSessionTiles = new List<Tile>();
-        public List<AnimationInnerTile> CurrentAnimationInnerTiles;
-        [SerializeField] private AnimationInnerTile _animationInnerTilePrefab;
-        public List<Player> Players;
+        public List<Tile> CurrentWaveSessionTiles = new();
+        public List<Tile> NextWaveSessionTiles = new();
 
-        public Tile[] Tiles;
+        [SerializeField] private Tile m_tilePrefab;
+        [SerializeField] private AnimationInnerTile m_animationInnerTilePrefab;
+        [SerializeField] private List<AnimationInnerTile> m_currentAnimationInnerTiles;
 
-        public int CurrentPlayerTurnIndex;
-        public float TileSize = 4f;
-
-
-        private void Awake()
+        public void StartGame(Dictionary<ulong, PlayerData> playersData)
         {
-            instance = this;
             CurrentWaveSessionTiles.Clear();
-        }
-        public void StartGame(List<Player> players)
-        {
-            Players = players;
-            CurrentPlayerTurnIndex = players[0].playerId;
-            PlayersCount = players.Count;
-            Load(MapFilePath);
+            CurrentPlayerTurnIndex = PlayerDataManager.Instance.GetSortedKeys()[0];
+            PlayersCount = playersData.Count;
+            Load(m_mapFilePath);
         }
 
-        public void OnInnerTileClick(InnerTile innerTile)
+        public void OnInnerTileClick(InnerTile innerTile, Tile parentTile)
         {
-            Player currentPlayer = GetCurrentPlayer();
-            Tile tile = innerTile._tile;
-            if (!IsMovementAnimationIsWorking && currentPlayer.IsAlive)
+            PlayerData currentPlayer = GetCurrentPlayer();
+            if(!currentPlayer.IsAlive)
             {
-                if (tile.PlayerId == -1 || tile.PlayerId == currentPlayer.playerId)
+                Debug.Log($"Warning: OnInnerTileClick: Player {currentPlayer} is not alive");
+                return;
+            }
+            if (!IsMovementAnimationIsWorking)
+            {
+                if (parentTile.PlayerId == 0 || parentTile.PlayerId == currentPlayer.PlayerId)
                 {
                     IsMovementAnimationIsWorking = true;
-                    tile.PlayerId = currentPlayer.playerId;
+                    parentTile.PlayerId = currentPlayer.PlayerId;
                     innerTile.SelectStateByUser(currentPlayer);
                     currentPlayer.Score++;
-                    StartScanProcedure(tile);
+                    if(!currentPlayer.HasDoneFirstAction)
+                    {
+                        currentPlayer.HasDoneFirstAction = true;
+                    }
+                    StartScanProcedure(parentTile);
                 }
             }
         }
 
-        public void OnAnimationInnerTileMovementEnd()
+        public bool AttemptSelectByUserProcedure(InnerTile innerTile)
         {
-            foreach (AnimationInnerTile animTile in CurrentAnimationInnerTiles)
-            {
-                animTile.GetComponent<Rigidbody2D>().velocity = Vector2.zero;
-            }
-            Player currentPlayer = GetCurrentPlayer();
-            foreach (AnimationInnerTile animTile in CurrentAnimationInnerTiles)
-            {
-                animTile.ToInnerTile.SelectByUser(currentPlayer);
-            }
-            foreach (AnimationInnerTile animTile in CurrentAnimationInnerTiles)
-            {
-                Destroy(animTile.gameObject);
-            }
-            CurrentAnimationInnerTiles.Clear();
+            return AttemptSelectByUserProcedure(innerTile, innerTile.GetParentTile());
+        }
 
-            WaveCount++;
-            PlayersStateUpdate();
-            GameManager.instance.UpdatePlayerStats(Players);
-            bool res = CheckForWinner();
-            if (!res)
+        public bool AttemptSelectByUserProcedure(InnerTile innerTile, Tile parentTile)
+        {
+            PlayerData currentPlayer = GetCurrentPlayer();
+            var parentTileInnerTiles = parentTile.GetInnerTiles();
+            if (innerTile.IsSelectedByPlayer)
             {
-                GameManager.instance.OnGameEnd(currentPlayer);
-            }
-            else
-            {
-                foreach (Tile tile in CurrentWaveSessionTiles)
+                bool tmpIsFullOfInnerTiles = true;
+                foreach (InnerTile parentTileInnerTile in parentTileInnerTiles.Values)
                 {
-                    var neighbourTiles = tile.GetNeighbourTiles();
-                    foreach (Tile neighbourTile in neighbourTiles.Values)
+                    if (!parentTileInnerTile.IsSelectedByPlayer)
                     {
-                        neighbourTile.CheckForFullOfInnerTiles();
-                        if (neighbourTile.IsFullOfInnerTiles)
+                        tmpIsFullOfInnerTiles = false;
+                    }
+                }
+                if (tmpIsFullOfInnerTiles)
+                {
+                    return false;
+                }
+            }
+            if (!innerTile.IsSelectedByPlayer && parentTile.PlayerId < 1)
+            {
+                innerTile.SelectStateByUser(currentPlayer);
+                parentTile.PlayerId = currentPlayer.PlayerId;
+                currentPlayer.Score++;
+                return true;
+            }
+            else if (currentPlayer.PlayerId == parentTile.PlayerId)
+            {
+                if (innerTile.IsSelectedByPlayer)
+                {
+                    var keys = new List<Direction>(parentTileInnerTiles.Keys);
+                    var basicKeys = new List<Direction>() { Direction.up, Direction.right, Direction.down, Direction.left };
+                    basicKeys.Remove(innerTile.direction);
+                    keys.Remove(innerTile.direction);
+
+                    foreach (Direction key in basicKeys)
+                    {
+                        if (keys.Contains(key) && !parentTileInnerTiles[key].IsSelectedByPlayer)
                         {
-                            NextWaveSessionTiles.Add(neighbourTile);
+                            parentTileInnerTiles[key].SelectStateByUser(currentPlayer);
+                            currentPlayer.Score++;
+                            return true;
                         }
                     }
-
-                }
-
-                CurrentWaveSessionTiles.Clear();
-                if (NextWaveSessionTiles.Count > 0)
-                {
-                    StartWave();
                 }
                 else
                 {
-                    NextTurn();
+                    innerTile.SelectStateByUser(currentPlayer);
+                    currentPlayer.Score++;
+                    return true;
                 }
             }
+            else if (currentPlayer.PlayerId != parentTile.PlayerId)
+            {
+                if (innerTile.IsSelectedByPlayer)
+                {
+                    var keys = new List<Direction>(parentTileInnerTiles.Keys);
+                    var basicKeys = new List<Direction>() { Direction.up, Direction.right, Direction.down, Direction.left };
+
+                    foreach (Direction key in keys)
+                    {
+                        if (parentTileInnerTiles[key].IsSelectedByPlayer)
+                        {
+                            PlayerDataManager.Instance.PlayersData[parentTile.PlayerId].Score--;
+                            parentTileInnerTiles[key].SelectStateByUser(currentPlayer);
+                            currentPlayer.Score++;
+                        }
+                    }
+
+                    basicKeys.Remove(innerTile.direction);
+                    keys.Remove(innerTile.direction);
+                    foreach (Direction key in basicKeys)
+                    {
+                        if (keys.Contains(key) && !parentTileInnerTiles[key].IsSelectedByPlayer)
+                        {
+                            parentTileInnerTiles[key].SelectStateByUser(currentPlayer);
+                            currentPlayer.Score++;
+                            parentTile.PlayerId = currentPlayer.PlayerId;
+                            return true;
+                        }
+                    }
+                    parentTile.PlayerId = currentPlayer.PlayerId;
+                }
+                else
+                {
+                    foreach (var parentTileInnerTile in parentTileInnerTiles.Values)
+                    {
+                        if (parentTileInnerTile.IsSelectedByPlayer)
+                        {
+                            PlayerDataManager.Instance.PlayersData[parentTile.PlayerId].Score--;
+                            parentTileInnerTile.SelectStateByUser(currentPlayer);
+                            currentPlayer.Score++;
+                        }
+                    }
+                    innerTile.SelectStateByUser(currentPlayer);
+                    currentPlayer.Score++;
+                    parentTile.PlayerId = currentPlayer.PlayerId;
+                    return true;
+                }
+            }
+
+            Debug.Log($"Exception undefined select InnerTile");
+            return false;
+        }
+
+        private void UpdateBoardStats()
+        {
+            WaveCount++;
+            GameManager.Instance.UpdatePlayerStats();
         }
 
         public void ClearInnerTilesSelection(List<Tile> tiles)
@@ -137,73 +181,48 @@ namespace Singleplayer
             }
         }
 
-
-
         public void NextTurn()
         {
             bool checkState = false;
-            CurrentPlayerTurnIndex = (CurrentPlayerTurnIndex + 1 >= PlayersCount) ? 0 : CurrentPlayerTurnIndex + 1;
-            while (!Players[CurrentPlayerTurnIndex].IsAlive)
+            var sortedKeys = PlayerDataManager.Instance.GetSortedKeys();
+            var currentKeyIndex = sortedKeys.IndexOf(CurrentPlayerTurnIndex);
+            if (currentKeyIndex == -1) {
+                Debug.Log($"Warning: NextTurn: IndexOf {CurrentPlayerTurnIndex} not found");
+                return;
+            }
+
+            CurrentPlayerTurnIndex = (currentKeyIndex + 1 >= PlayersCount) ? sortedKeys[0] : sortedKeys[currentKeyIndex + 1];
+            while (!PlayerDataManager.Instance.PlayersData[CurrentPlayerTurnIndex].IsAlive)
             {
-                if(CurrentPlayerTurnIndex + 1 >= PlayersCount)
+                if(currentKeyIndex + 1 >= PlayersCount)
                 {
-                    CurrentPlayerTurnIndex = 0;
+                    CurrentPlayerTurnIndex = sortedKeys[0];
                     checkState = true;
                 } else {
-                    CurrentPlayerTurnIndex = CurrentPlayerTurnIndex + 1;
-                    if(checkState)
+                    currentKeyIndex++;
+                    CurrentPlayerTurnIndex = sortedKeys[currentKeyIndex];
+                    if (checkState)
                     {
-                        bool res = CheckForWinner();
+                        bool res = GameManager.Instance.CheckForWinner();
                         if (!res)
                         {
-                            GameManager.instance.OnGameEnd(GetCurrentPlayer());
+                            GameManager.Instance.OnGameEnd(GetCurrentPlayer());
                         }
                     }
                 }
-           
-                
             }
             IsMovementAnimationIsWorking = false;
         }
 
-        public bool CheckForWinner()
+        public PlayerData GetCurrentPlayer()
         {
-            int alivePlayersCount = 0;
-            foreach (Player player in Players)
-            {
-                if (player.IsAlive)
-                {
-                    alivePlayersCount++;
-                }
-            }
-            return alivePlayersCount > 1;
-        }
-
-        public void PlayersStateUpdate()
-        {
-            foreach (Player player in Players)
-            {
-                if (player.IsAlive)
-                {
-                    if (player.Score < 1)
-                    {
-                        Debug.Log($"Player dies {player.playerName}");
-                        player.IsAlive = false;
-                    }
-                }
-            }
-        }
-
-
-        public Player GetCurrentPlayer()
-        {
-            return Players[CurrentPlayerTurnIndex];
+            return PlayerDataManager.Instance.PlayersData[CurrentPlayerTurnIndex];
         }
 
         public void StartScanProcedure(Tile tile)
         {
             tile.CheckForFullOfInnerTiles();
-            GameManager.instance.UpdatePlayerStats(Players);
+            GameManager.Instance.UpdatePlayerStats();
             if (!tile.IsFullOfInnerTiles)
             {
                 NextTurn();
@@ -220,23 +239,27 @@ namespace Singleplayer
             NextWaveSessionTiles.Add(fromTile);
             StartWave();
         }
+
         public void StartWave()
         {
             CurrentWaveSessionTiles.Clear();
             foreach (var item in NextWaveSessionTiles)
             {
-                CurrentWaveSessionTiles.Add(item);
+                if(!CurrentWaveSessionTiles.Contains(item))
+                {
+                    CurrentWaveSessionTiles.Add(item);
+                }
             }
             NextWaveSessionTiles.Clear();
-            CurrentAnimationInnerTiles.Clear();
+            m_currentAnimationInnerTiles.Clear();
             foreach (Tile tile in CurrentWaveSessionTiles)
             {
                 var innerTiles = tile.GetInnerTiles();
                 var neighbourTiles = tile.GetNeighbourTiles();
                 foreach (var innerTile in innerTiles)
                 {
-                    AnimationInnerTile animInnerTile = GetAnimationInnerTile(tile, innerTile.Value, neighbourTiles[innerTile.Key].GetInnerTileByDirection(GetOppositeDirection(innerTile.Key)));
-                    CurrentAnimationInnerTiles.Add(animInnerTile);
+                    AnimationInnerTile animInnerTile = GetAnimationInnerTile(tile, innerTile.Value, neighbourTiles[innerTile.Key].GetInnerTileByDirection(Directions.GetOppositeDirection(innerTile.Key)));
+                    m_currentAnimationInnerTiles.Add(animInnerTile);
                 }
                 tile.ClearInnerTilesSelection();
             }
@@ -245,11 +268,69 @@ namespace Singleplayer
 
         public void StartAnimationInnerTileMovement()
         {
-            foreach (AnimationInnerTile animInnerTile in CurrentAnimationInnerTiles)
+            foreach (AnimationInnerTile animInnerTile in m_currentAnimationInnerTiles)
             {
                 animInnerTile.StartMove();
             }
             StartCoroutine(TileMovementCoroutine());
+        }
+
+        public void OnAnimationInnerTileMovementEnd()
+        {
+            List<AnimationInnerTile> activeAnimeInnertTiles = new();
+            List<InnerTile> activeInnertTiles = new();
+
+            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles)
+            {
+                animTile.GetComponent<Rigidbody2D>().velocity = Vector2.zero;
+                if (!activeInnertTiles.Contains(animTile.ToInnerTile))
+                {
+                    activeInnertTiles.Add(animTile.ToInnerTile);
+                    activeAnimeInnertTiles.Add(animTile);
+                }
+            }
+            foreach (AnimationInnerTile animTile in activeAnimeInnertTiles)
+            {
+                if (AttemptSelectByUserProcedure(animTile.ToInnerTile))
+                {
+                    PlayerDataManager.Instance.PlayersData[animTile.PlayerId].Score--;
+                }
+            }
+            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles)
+            {
+                Destroy(animTile.gameObject);
+            }
+
+            m_currentAnimationInnerTiles.Clear();
+            UpdateBoardStats();
+            GameManager.Instance.CheckForWinnerAndRaiseGameEnd();
+            if(GameManager.Instance.CurrentGameStatus == GameStatus.FINISHED)
+            {
+                return;
+            }
+            foreach (Tile tile in CurrentWaveSessionTiles)
+            {
+                var neighbourTiles = tile.GetNeighbourTiles();
+                foreach (Tile neighbourTile in neighbourTiles.Values)
+                {
+                    neighbourTile.CheckForFullOfInnerTiles();
+                    if (neighbourTile.IsFullOfInnerTiles)
+                    {
+                        NextWaveSessionTiles.Add(neighbourTile);
+                    }
+                }
+
+            }
+
+            CurrentWaveSessionTiles.Clear();
+            if (NextWaveSessionTiles.Count > 0)
+            {
+                StartWave();
+            }
+            else
+            {
+                NextTurn();
+            }
         }
 
         public IEnumerator TileMovementCoroutine()
@@ -259,83 +340,37 @@ namespace Singleplayer
             OnAnimationInnerTileMovementEnd();
         }
 
-
         public AnimationInnerTile GetAnimationInnerTile(Tile tileFrom, InnerTile innerTileFrom, InnerTile innerTileTo)
         {
-            Player currentPlayer = GetCurrentPlayer();
-            AnimationInnerTile animInnerTile = Instantiate<AnimationInnerTile>(_animationInnerTilePrefab);
+            PlayerData currentPlayer = GetCurrentPlayer();
+            AnimationInnerTile animInnerTile = Instantiate(m_animationInnerTilePrefab);
             animInnerTile.FromInnerTile = innerTileFrom;
-            animInnerTile.ToInnerTile = innerTileTo;// foundTile.GetInnerTileByDirection(foundTile.GetReversedDrection(direction));
-            animInnerTile.direction = GetVector2FromDirection(innerTileFrom.direction);
+            animInnerTile.ToInnerTile = innerTileTo;
+            animInnerTile.MoveDirection = Directions.GetVector2FromDirection(innerTileFrom.direction);
             animInnerTile.transform.position = innerTileFrom.transform.position;
-            animInnerTile.SelectColor = currentPlayer.playerColor;
-            animInnerTile.PlayerId = currentPlayer.playerId;
+            animInnerTile.SelectColor = currentPlayer.PlayerColor;
+            animInnerTile.PlayerId = currentPlayer.PlayerId;
             return animInnerTile;
         }
-        private Vector2 GetVector2FromDirection(Direction direction)
-        {
-            switch (direction)
-            {
-                case Direction.up:
-                    return Vector2.up;
-                case Direction.right:
-                    return Vector2.right;
-                case Direction.down:
-                    return Vector2.down;
-                case Direction.left:
-                    return Vector2.left;
-                default:
-                    return Vector2.up;
-            }
-        }
-        private Direction GetOppositeDirection(Direction direction)
-        {
-            switch (direction)
-            {
-                case Direction.right:
-                    return Direction.left;
-                case Direction.down:
-                    return Direction.up;
-                case Direction.left:
-                    return Direction.right;
-                default:
-                    return Direction.down;
-            }
-        }
-        public void Load(string filename = "Map.json")
+        
+        public void Load(string filename = null)
         {
             string mapPath = PlayerPrefs.GetString("MapPath");
-            if(mapPath.Trim().Length != 0)
+            if(mapPath.Trim().Length == 0)
             {
-                filename = mapPath + ".json";
+                Debug.Log("Warning: Load: MapPath not found in PlayerPrefs");
+                mapPath = filename;
             }
-            string path = Application.dataPath + "/Maps/" + filename;
-            if (File.Exists(path))
+            TileDataList tileDataList = LoadingMapManager.LoadMap(mapPath);
+            foreach (TileData tileData in tileDataList.tiles)
             {
-                string json = File.ReadAllText(path);
-                TileDataList tileDataList = JsonUtility.FromJson<TileDataList>(json);
-                foreach (TileData tileData in tileDataList.tiles)
+                var newTile = Instantiate(m_tilePrefab, tileData.position,  Quaternion.identity, transform);
+                foreach (Direction key in tileData.directions)
                 {
-                    var newTile = Instantiate(TilePrefab, NormalizePostion(tileData.position),  Quaternion.identity, transform);
-                    foreach (Direction key in tileData.directions)
-                    {
-                        newTile.AddInnerTileInDirection(key);
-                    }
+                    newTile.AddInnerTileInDirection(key);
                 }
-            }
-            else
-            {
-                Debug.LogError("File not found: " + path);
             }
         }
 
-        public Vector3 NormalizePostion(Vector3 oldPosition)
-        {
-            Vector3 normalizedPosition = new Vector2();
-            normalizedPosition.x = Mathf.Round(oldPosition.x / TileSize) * TileSize;
-            normalizedPosition.y = Mathf.Round(oldPosition.y / TileSize) * TileSize;
-            normalizedPosition.z = 0;
-            return normalizedPosition;
-        }
     }
 }

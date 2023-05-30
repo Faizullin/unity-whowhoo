@@ -4,12 +4,6 @@ using UnityEngine;
 
 public class CameraController : MonoBehaviour
 {
-    public int Rows = 1;
-    public int Cols = 1;
-    public float padding = 1.0f;
-    //public GameObject tilePrefab;
-    [SerializeField] private SpriteRenderer _tileRenderer;
-
     //public float moveSpeed = 10f;
     //public float zoomSpeed = 5f;
     //private Vector3 _targetPosition;
@@ -21,28 +15,27 @@ public class CameraController : MonoBehaviour
     //    float size = Mathf.Max(halfHeight, halfWidth);
     //    GetComponent<Camera>().orthographicSize = size;
     //}
-    public float zoomSpeed = 0.5f; // The speed at which the camera will zoom in and out
-    public float panSpeed = 0.7f; // The speed at which the camera will pan across the map
+    [SerializeField]
+    private float m_zoomSpeed = 1.5f;
+    [SerializeField]
+    private float m_panSpeed = 0.7f;
 
-    private Vector3 lastMousePosition; // The last known position of the mouse, used for panning the camera
+    private Vector3 m_lastMousePosition; // The last known position of the mouse, used for panning the camera
 
     void Update()
     {
-        if (Input.GetMouseButtonDown(0))
+        if (Input.GetMouseButtonDown(2))
         {
-            // If the user presses the left mouse button, record the current mouse position for use in panning the camera
-            lastMousePosition = Input.mousePosition;
+            m_lastMousePosition = Input.mousePosition;
         }
-        else if (Input.GetMouseButton(0))
+        else if (Input.GetMouseButton(2))
         {
-            // If the user is holding down the left mouse button, pan the camera across the map based on the difference between the current and last mouse positions
-            Vector3 delta = transform.InverseTransformDirection(Camera.main.ScreenToWorldPoint(lastMousePosition) - Camera.main.ScreenToWorldPoint(Input.mousePosition));
-            transform.position += delta * panSpeed;
-            lastMousePosition = Input.mousePosition;
+            Vector3 delta = transform.InverseTransformDirection(Camera.main.ScreenToWorldPoint(m_lastMousePosition) - Camera.main.ScreenToWorldPoint(Input.mousePosition));
+            transform.position += delta * m_panSpeed;
+            m_lastMousePosition = Input.mousePosition;
         }
 
-        // Zoom the camera in and out using the mouse scroll wheel
-        float deltaZoom = Input.mouseScrollDelta.y * zoomSpeed;
-        Camera.main.orthographicSize = Mathf.Clamp(Camera.main.orthographicSize - deltaZoom, 1, 10);
+        float deltaZoom = Input.mouseScrollDelta.y * m_zoomSpeed;
+        Camera.main.orthographicSize = Mathf.Clamp(Camera.main.orthographicSize - deltaZoom, 1, 80);
     }
 }
