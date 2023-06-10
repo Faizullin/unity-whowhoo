@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using TileMapEditor.Tiles;
+using Unity.Netcode;
 
 namespace TileMapEditor
 {
@@ -59,7 +60,7 @@ namespace TileMapEditor
         public void SaveMap()
         {
             List<TileData> tileDataList = new List<TileData>();
-            
+            int indexCounter = 0;
             foreach (Tile tileObject in tileList)
             {
                 var tileDataDirections = new List<Direction>();
@@ -72,7 +73,8 @@ namespace TileMapEditor
                     }
                     
                 }
-                TileData tileData = new TileData(type, tileObject.transform.position, tileDataDirections);
+                TileData tileData = new TileData(type, tileObject.transform.position, tileDataDirections, indexCounter);
+                indexCounter++;
                 tileDataList.Add(tileData);
             }
             LoadingMapManager.SaveMap(tileDataList);
@@ -137,17 +139,45 @@ namespace TileMapEditor
 }
 
 [System.Serializable]
-public class TileData
+public class TileData: INetworkSerializable
 {
     public int type;
+    public int index;
     public Vector3 position;
     public List<Direction> directions;
 
-    public TileData(int type, Vector3 position, List<Direction> directions)
+    public TileData()
+    {
+        type = 0;
+        index = 0;
+        position = Vector3.zero;
+        directions = new List<Direction>();
+    }
+
+    public TileData(int type, Vector3 position, List<Direction> directions, int index)
     {
         this.type = type;
         this.position = position;
         this.directions = directions;
+        this.index = index;
+    }
+
+    public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+    {
+        serializer.SerializeValue(ref type);
+        serializer.SerializeValue(ref position);
+        serializer.SerializeValue(ref index);
+        if (serializer.IsWriter)
+        {
+            Direction[] directionArray = directions.ToArray();
+            serializer.SerializeValue(ref directionArray);
+        }
+        else
+        {
+            Direction[] directionArray = null;
+            serializer.SerializeValue(ref directionArray);
+            directions = new List<Direction>(directionArray);
+        }
     }
 }
 

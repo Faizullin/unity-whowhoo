@@ -11,61 +11,71 @@ namespace Singleplayer
     {
         [SerializeField]
         private string m_mapFilePath = "Map_2023-05-27_13-58-56.json";
+        private AnimationInnerTileControlBoardManager m_animationInnerTileController;
+
         public bool IsMovementAnimationIsWorking = false;
         
         public int WaveCount = 0;
         public int PlayersCount = 0;
         public ulong CurrentPlayerTurnIndex;
 
+        [SerializeField] private Tile m_tilePrefab;
+
         public List<Tile> CurrentWaveSessionTiles = new();
         public List<Tile> NextWaveSessionTiles = new();
+        // private List<Tile> tileList = new();
 
-        [SerializeField] private Tile m_tilePrefab;
-        [SerializeField] private AnimationInnerTile m_animationInnerTilePrefab;
-        [SerializeField] private List<AnimationInnerTile> m_currentAnimationInnerTiles;
+        private Dictionary<ulong, PlayerState> m_playerStatesToUpdate = new();
 
-        public void StartGame(Dictionary<ulong, PlayerData> playersData)
+        public void Awake()
+        {
+            base.Awake();
+            m_animationInnerTileController = GetComponent<AnimationInnerTileControlBoardManager>();
+        }
+
+        public void StartGame()
         {
             CurrentWaveSessionTiles.Clear();
-            CurrentPlayerTurnIndex = PlayerDataManager.Instance.GetSortedKeys()[0];
-            PlayersCount = playersData.Count;
+            var playerIds = GameManager.Instance.GetSortedClientIds();
+            CurrentPlayerTurnIndex = playerIds[0];
+            PlayersCount = playerIds.Count;
             Load(m_mapFilePath);
         }
 
         public void OnInnerTileClick(InnerTile innerTile, Tile parentTile)
         {
-            PlayerData currentPlayer = GetCurrentPlayer();
-            if(!currentPlayer.IsAlive)
+            PlayerState currentPlayerState = (PlayerState)GetCurrentPlayer();
+            if (!currentPlayerState.IsAlive)
             {
-                Debug.Log($"Warning: OnInnerTileClick: Player {currentPlayer} is not alive");
+                Debug.Log($"Warning: OnInnerTileClickServerRpc: Player {currentPlayerState.PlayerName} is not alive");
                 return;
             }
             if (!IsMovementAnimationIsWorking)
             {
-                if (parentTile.PlayerId == 0 || parentTile.PlayerId == currentPlayer.PlayerId)
+                if (parentTile.PlayerId == 0 || parentTile.PlayerId == currentPlayerState.ClientId)
                 {
                     IsMovementAnimationIsWorking = true;
-                    parentTile.PlayerId = currentPlayer.PlayerId;
-                    innerTile.SelectStateByUser(currentPlayer);
-                    currentPlayer.Score++;
-                    if(!currentPlayer.HasDoneFirstAction)
+                    parentTile.PlayerId = currentPlayerState.ClientId;
+                    innerTile.SelectStateByUser(currentPlayerState);
+
+                    if (!currentPlayerState.HasDoneFirstAction)
                     {
-                        currentPlayer.HasDoneFirstAction = true;
+                        currentPlayerState.HasDoneFirstAction = true;
                     }
                     StartScanProcedure(parentTile);
                 }
             }
         }
 
-        public bool AttemptSelectByUserProcedure(InnerTile innerTile)
+        public bool AttemptSelectByUserProcedure(PlayerState currentPlayerState, InnerTile innerTile)
         {
-            return AttemptSelectByUserProcedure(innerTile, innerTile.GetParentTile());
+            return AttemptSelectByUserProcedure(currentPlayerState, innerTile, innerTile.GetParentTile());
         }
 
-        public bool AttemptSelectByUserProcedure(InnerTile innerTile, Tile parentTile)
+        public bool AttemptSelectByUserProcedure(PlayerState currentPlayerState, InnerTile innerTile, Tile parentTile)
         {
-            PlayerData currentPlayer = GetCurrentPlayer();
             var parentTileInnerTiles = parentTile.GetInnerTiles();
+
             if (innerTile.IsSelectedByPlayer)
             {
                 bool tmpIsFullOfInnerTiles = true;
@@ -83,12 +93,12 @@ namespace Singleplayer
             }
             if (!innerTile.IsSelectedByPlayer && parentTile.PlayerId < 1)
             {
-                innerTile.SelectStateByUser(currentPlayer);
-                parentTile.PlayerId = currentPlayer.PlayerId;
-                currentPlayer.Score++;
+                innerTile.SelectStateByUser(currentPlayerState);
+                parentTile.PlayerId = currentPlayerState.ClientId;
+                AddToPlayerStateToUpdate(currentPlayerState, 1);
                 return true;
             }
-            else if (currentPlayer.PlayerId == parentTile.PlayerId)
+            else if (currentPlayerState.ClientId == parentTile.PlayerId)
             {
                 if (innerTile.IsSelectedByPlayer)
                 {
@@ -101,33 +111,35 @@ namespace Singleplayer
                     {
                         if (keys.Contains(key) && !parentTileInnerTiles[key].IsSelectedByPlayer)
                         {
-                            parentTileInnerTiles[key].SelectStateByUser(currentPlayer);
-                            currentPlayer.Score++;
+                            parentTileInnerTiles[key].SelectStateByUser(currentPlayerState);
+                            AddToPlayerStateToUpdate(currentPlayerState, 1);
                             return true;
                         }
                     }
                 }
                 else
                 {
-                    innerTile.SelectStateByUser(currentPlayer);
-                    currentPlayer.Score++;
+                    innerTile.SelectStateByUser(currentPlayerState);
+                    AddToPlayerStateToUpdate(currentPlayerState, 1);
                     return true;
                 }
             }
-            else if (currentPlayer.PlayerId != parentTile.PlayerId)
+            else if (currentPlayerState.ClientId != parentTile.PlayerId)
             {
                 if (innerTile.IsSelectedByPlayer)
                 {
                     var keys = new List<Direction>(parentTileInnerTiles.Keys);
                     var basicKeys = new List<Direction>() { Direction.up, Direction.right, Direction.down, Direction.left };
 
+                    parentTile.PlayerId = currentPlayerState.ClientId;
+
                     foreach (Direction key in keys)
                     {
                         if (parentTileInnerTiles[key].IsSelectedByPlayer)
                         {
-                            PlayerDataManager.Instance.PlayersData[parentTile.PlayerId].Score--;
-                            parentTileInnerTiles[key].SelectStateByUser(currentPlayer);
-                            currentPlayer.Score++;
+                            AddToPlayerStateToUpdate(parentTile.PlayerId, -1);
+                            parentTileInnerTiles[key].SelectStateByUser(currentPlayerState);
+                            AddToPlayerStateToUpdate(currentPlayerState, -1);
                         }
                     }
 
@@ -137,13 +149,12 @@ namespace Singleplayer
                     {
                         if (keys.Contains(key) && !parentTileInnerTiles[key].IsSelectedByPlayer)
                         {
-                            parentTileInnerTiles[key].SelectStateByUser(currentPlayer);
-                            currentPlayer.Score++;
-                            parentTile.PlayerId = currentPlayer.PlayerId;
+                            parentTileInnerTiles[key].SelectStateByUser(currentPlayerState);
+                            AddToPlayerStateToUpdate(currentPlayerState, 1);
                             return true;
                         }
                     }
-                    parentTile.PlayerId = currentPlayer.PlayerId;
+                    parentTile.PlayerId = currentPlayerState.ClientId;
                 }
                 else
                 {
@@ -151,14 +162,14 @@ namespace Singleplayer
                     {
                         if (parentTileInnerTile.IsSelectedByPlayer)
                         {
-                            PlayerDataManager.Instance.PlayersData[parentTile.PlayerId].Score--;
-                            parentTileInnerTile.SelectStateByUser(currentPlayer);
-                            currentPlayer.Score++;
+                            AddToPlayerStateToUpdate(parentTile.PlayerId, -1);
+                            parentTileInnerTile.SelectStateByUser(currentPlayerState);
+                            AddToPlayerStateToUpdate(currentPlayerState, 1);
                         }
                     }
-                    innerTile.SelectStateByUser(currentPlayer);
-                    currentPlayer.Score++;
-                    parentTile.PlayerId = currentPlayer.PlayerId;
+                    innerTile.SelectStateByUser(currentPlayerState);
+                    AddToPlayerStateToUpdate(currentPlayerState, 1);
+                    parentTile.PlayerId = currentPlayerState.ClientId;
                     return true;
                 }
             }
@@ -170,7 +181,7 @@ namespace Singleplayer
         private void UpdateBoardStats()
         {
             WaveCount++;
-            GameManager.Instance.UpdatePlayerStats();
+            GameManager.Instance.UpdatePlayerIsAlive();
         }
 
         public void ClearInnerTilesSelection(List<Tile> tiles)
@@ -206,7 +217,7 @@ namespace Singleplayer
                         bool res = GameManager.Instance.CheckForWinner();
                         if (!res)
                         {
-                            GameManager.Instance.OnGameEnd(GetCurrentPlayer());
+                            GameManager.Instance.OnGameEnd((PlayerState)GetCurrentPlayer());
                         }
                     }
                 }
@@ -214,21 +225,26 @@ namespace Singleplayer
             IsMovementAnimationIsWorking = false;
         }
 
-        public PlayerData GetCurrentPlayer()
+        public PlayerState? GetCurrentPlayer()
         {
-            return PlayerDataManager.Instance.PlayersData[CurrentPlayerTurnIndex];
+            return GameManager.Instance.GetPlayerByClientId(CurrentPlayerTurnIndex);
         }
 
         public void StartScanProcedure(Tile tile)
         {
             tile.CheckForFullOfInnerTiles();
-            GameManager.Instance.UpdatePlayerStats();
+            var currentPlayerState = (PlayerState)GetCurrentPlayer();
             if (!tile.IsFullOfInnerTiles)
             {
+                AddToPlayerStateToUpdate(currentPlayerState, 1);
+                SendDataToUpdate();
+                m_playerStatesToUpdate.Clear();
                 NextTurn();
             }
             else
             {
+                AddToPlayerStateToUpdate(currentPlayerState, 1);
+                SendDataToUpdate();
                 StartFirstWave(tile);
             }
         }
@@ -251,60 +267,49 @@ namespace Singleplayer
                 }
             }
             NextWaveSessionTiles.Clear();
-            m_currentAnimationInnerTiles.Clear();
+
+            var currentPlayerState = (PlayerState)GetCurrentPlayer();
+
             foreach (Tile tile in CurrentWaveSessionTiles)
             {
                 var innerTiles = tile.GetInnerTiles();
                 var neighbourTiles = tile.GetNeighbourTiles();
                 foreach (var innerTile in innerTiles)
                 {
-                    AnimationInnerTile animInnerTile = GetAnimationInnerTile(tile, innerTile.Value, neighbourTiles[innerTile.Key].GetInnerTileByDirection(Directions.GetOppositeDirection(innerTile.Key)));
-                    m_currentAnimationInnerTiles.Add(animInnerTile);
+                    m_animationInnerTileController.GetAndAddAnimationInnerTile(
+                        innerTile.Value, 
+                        neighbourTiles[innerTile.Key].GetInnerTileByDirection(Directions.GetOppositeDirection(innerTile.Key)),
+                        currentPlayerState
+                    );
                 }
                 tile.ClearInnerTilesSelection();
             }
-            StartAnimationInnerTileMovement();
-        }
 
-        public void StartAnimationInnerTileMovement()
-        {
-            foreach (AnimationInnerTile animInnerTile in m_currentAnimationInnerTiles)
-            {
-                animInnerTile.StartMove();
-            }
-            StartCoroutine(TileMovementCoroutine());
+            // m_animationInnerTileController.DestroyAllWithCoroutine();
+            m_animationInnerTileController.StartMoveAll();
         }
 
         public void OnAnimationInnerTileMovementEnd()
         {
-            List<AnimationInnerTile> activeAnimeInnertTiles = new();
-            List<InnerTile> activeInnertTiles = new();
+            m_animationInnerTileController.StopMoveAll();
+            List<AnimationInnerTile> activeAnimeInnertTiles = m_animationInnerTileController.GetUniqueAnimationInnerTiles();
 
-            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles)
-            {
-                animTile.GetComponent<Rigidbody2D>().velocity = Vector2.zero;
-                if (!activeInnertTiles.Contains(animTile.ToInnerTile))
-                {
-                    activeInnertTiles.Add(animTile.ToInnerTile);
-                    activeAnimeInnertTiles.Add(animTile);
-                }
-            }
+            PlayerState currentPlayerState = (PlayerState)GetCurrentPlayer();
             foreach (AnimationInnerTile animTile in activeAnimeInnertTiles)
             {
-                if (AttemptSelectByUserProcedure(animTile.ToInnerTile))
+                if (AttemptSelectByUserProcedure(currentPlayerState, animTile.ToInnerTile))
                 {
-                    PlayerDataManager.Instance.PlayersData[animTile.PlayerId].Score--;
+                    AddToPlayerStateToUpdate(animTile.PlayerId, -1);
                 }
             }
-            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles)
-            {
-                Destroy(animTile.gameObject);
-            }
+            m_animationInnerTileController.DestroyAll();
 
-            m_currentAnimationInnerTiles.Clear();
+            SendDataToUpdate();
+            m_playerStatesToUpdate.Clear();
             UpdateBoardStats();
+
             GameManager.Instance.CheckForWinnerAndRaiseGameEnd();
-            if(GameManager.Instance.CurrentGameStatus == GameStatus.FINISHED)
+            if (GameManager.Instance.CurrentGameStatus == GameStatus.FINISHED)
             {
                 return;
             }
@@ -333,38 +338,20 @@ namespace Singleplayer
             }
         }
 
-        public IEnumerator TileMovementCoroutine()
-        {
-            float moveTime = 2.0f;
-            yield return new WaitForSeconds(moveTime);
-            OnAnimationInnerTileMovementEnd();
-        }
-
-        public AnimationInnerTile GetAnimationInnerTile(Tile tileFrom, InnerTile innerTileFrom, InnerTile innerTileTo)
-        {
-            PlayerData currentPlayer = GetCurrentPlayer();
-            AnimationInnerTile animInnerTile = Instantiate(m_animationInnerTilePrefab);
-            animInnerTile.FromInnerTile = innerTileFrom;
-            animInnerTile.ToInnerTile = innerTileTo;
-            animInnerTile.MoveDirection = Directions.GetVector2FromDirection(innerTileFrom.direction);
-            animInnerTile.transform.position = innerTileFrom.transform.position;
-            animInnerTile.SelectColor = currentPlayer.PlayerColor;
-            animInnerTile.PlayerId = currentPlayer.PlayerId;
-            return animInnerTile;
-        }
-        
         public void Load(string filename = null)
         {
             string mapPath = PlayerPrefs.GetString("MapPath");
-            if(mapPath.Trim().Length == 0)
+            if (mapPath.Trim().Length == 0)
             {
                 Debug.Log("Warning: Load: MapPath not found in PlayerPrefs");
                 mapPath = filename;
             }
-            TileDataList tileDataList = LoadingMapManager.LoadMap(mapPath);
-            foreach (TileData tileData in tileDataList.tiles)
+            TileData[] tileDataList = LoadingMapManager.LoadMap(mapPath).tiles.ToArray();
+            foreach (TileData tileData in tileDataList)
             {
-                var newTile = Instantiate(m_tilePrefab, tileData.position,  Quaternion.identity, transform);
+                var newTile = Instantiate(m_tilePrefab, tileData.position, Quaternion.identity, transform);
+                newTile.Index = tileData.index;
+                // tileList.Add(newTile);
                 foreach (Direction key in tileData.directions)
                 {
                     newTile.AddInnerTileInDirection(key);
@@ -372,5 +359,37 @@ namespace Singleplayer
             }
         }
 
+
+        private void SendDataToUpdate()
+        {
+            List<PlayerState> tmpPlayers = new();
+            foreach (var item in m_playerStatesToUpdate.Values)
+            {
+                tmpPlayers.Add(item);
+            }
+            GameManager.Instance.UpdatePlayerHealth(tmpPlayers);
+        }
+
+        private void AddToPlayerStateToUpdate(ulong playerStateClientId, int Score = 0)
+        {
+            var playerState = (PlayerState)GameManager.Instance.GetPlayerByClientId(playerStateClientId);
+            AddToPlayerStateToUpdate(playerState, Score);
+        }
+        private void AddToPlayerStateToUpdate(PlayerState playerState, int Score = 0)
+        {
+            ulong index = playerState.ClientId;
+            if (m_playerStatesToUpdate.ContainsKey(index))
+            {
+                var tmp = new PlayerState(m_playerStatesToUpdate[index]);
+                tmp.Score += Score;
+                m_playerStatesToUpdate[index] = tmp;
+            }
+            else
+            {
+                var tmp = new PlayerState(playerState);
+                tmp.Score += Score;
+                m_playerStatesToUpdate.Add(index, tmp);
+            }
+        }
     }
 }

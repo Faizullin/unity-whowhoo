@@ -83,18 +83,14 @@ namespace Multiplayer.Tiles
 
         public void ClearInnerTilesSelection()
         {
-            if(PlayerId != 0)
+            foreach (InnerTile innerTile in m_innerTiles.Values)
             {
-                foreach (InnerTile innerTile in m_innerTiles.Values)
+                if(innerTile.IsSelectedByPlayer)
                 {
-                    if(innerTile.IsSelectedByPlayer)
-                    {
-                        innerTile.ClearSelect();
-                    }
+                    innerTile.ClearSelect();
                 }
-                PlayerId = 0;
             }
-            
+            PlayerId = 0;            
         }
 
         public void RemoveInnerTile(Direction key)

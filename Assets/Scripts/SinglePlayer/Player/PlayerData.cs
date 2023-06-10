@@ -9,9 +9,9 @@ namespace Singleplayer.Player {
     {
         public PlayerData(ulong playerId, string playerName, Color playerColor)
         {
-            this.PlayerColor = playerColor;
-            this.PlayerName = playerName;
-            this.PlayerId = playerId;
+            PlayerColor = playerColor;
+            PlayerName = playerName;
+            PlayerId = playerId;
         }
 
         public bool HasDoneFirstAction = false;

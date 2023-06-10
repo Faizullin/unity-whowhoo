@@ -43,6 +43,7 @@ public static class LoadingMapManager
         }
         File.Delete(path);
     }
+
     public static TileDataList LoadMap(string filename)
     {
         string path = Application.dataPath + "/Maps/" + filename + ".json"; ;

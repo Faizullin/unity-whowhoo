@@ -15,6 +15,8 @@ namespace Singleplayer.Tiles
         public bool HasInnerTiles = true;
         public ulong PlayerId = 0;
 
+        public int Index;
+
         public void CheckForFullOfInnerTiles()
         {
             bool tmpAllInnerTilesActive = true;

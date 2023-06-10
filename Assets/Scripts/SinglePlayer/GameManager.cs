@@ -18,29 +18,42 @@ namespace Singleplayer
     {
         public GameStatus CurrentGameStatus = GameStatus.IDLE;
 
+        private List<PlayerState> playerStates = new();
+
         private void Start()
         {
-            SceneInit();
-        }
-
-        public void SceneInit()
-        {
             CurrentGameStatus = GameStatus.RUNNING;
+            UIManager.Instance.CloseAllUIPanels();
+
+            var clientIds = PlayerDataManager.Instance.GetSortedKeys();
+            foreach (var clientId in clientIds)
+            {
+                HandleClientConnected(clientId);
+            }
             StartGame();
         }
-        public void StartGame()
+
+        private void HandleClientConnected(ulong clientId)
         {
-            var playersData = PlayerDataManager.Instance.PlayersData;
-            if(playersData.Count < 2)
-            {
-                LoadingSceneManager.Instance.LoadScene(SceneName.MainMenuScene ,false);
-                return;
-            }
-            UIManager.Instance.CloseAllUIPanels();
-            UpdatePlayerStats();
-            BoardManager.Instance.StartGame(playersData);
+            var playerData = PlayerDataManager.Instance.PlayersData[clientId];
+
+            var playerState = new PlayerState(
+                clientId,
+                playerData.PlayerName,
+                playerData.PlayerColor,
+                0,
+                true,
+                false
+            );
+            playerStates.Add(playerState);
+            UIManager.Instance.AddPlayerCard(playerState);
         }
 
+        public void StartGame()
+        {
+            UpdatePlayerIsAlive();
+            BoardManager.Instance.StartGame();
+        }
 
         private void Update()
         {
@@ -69,7 +82,7 @@ namespace Singleplayer
             UIManager.Instance.OpenPauseUI(false);
             CurrentGameStatus = GameStatus.RUNNING;
         }
-        public void OnGameEnd(PlayerData player)
+        public void OnGameEnd(PlayerState player)
         {
             CurrentGameStatus = GameStatus.FINISHED;
             UIManager.Instance.OpenGameEndUI(true, $"Winner {player.PlayerName}({player.Score})");
@@ -85,30 +98,11 @@ namespace Singleplayer
         {
             LoadingSceneManager.Instance.LoadScene(SceneName.MainMenuScene, false);
         }
-        public void UpdatePlayerStats()
-        {
-            PlayersHealthUpdate();
-            UIManager.Instance.UpdatePlayerStats();
-        }
-        private void PlayersHealthUpdate()
-        {
-            foreach (PlayerData playerData in PlayerDataManager.Instance.PlayersData.Values)
-            {
-                if (playerData.IsAlive && playerData.HasDoneFirstAction)
-                {
-                    if (playerData.Score < 1)
-                    {
-                        Debug.Log($"Player dies {playerData.PlayerName}");
-                        playerData.IsAlive = false;
-                    }
-                }
-            }
-        }
 
         public bool CheckForWinner()
         {
             int alivePlayersCount = 0;
-            foreach (PlayerData playerData in PlayerDataManager.Instance.PlayersData.Values)
+            foreach (PlayerState playerData in playerStates)
             {
                 if (playerData.IsAlive)
                 {
@@ -123,8 +117,79 @@ namespace Singleplayer
             if(!CheckForWinner())
             {
                 Time.timeScale = 0;
-                OnGameEnd(BoardManager.Instance.GetCurrentPlayer());
+                OnGameEnd((PlayerState)BoardManager.Instance.GetCurrentPlayer());
             }
         }
+
+        public List<ulong> GetSortedClientIds()
+        {
+            List<ulong> result = new();
+            foreach (var item in playerStates)
+            {
+                result.Add(item.ClientId);
+            }
+            result.Sort();
+            return result;
+        }
+
+        public PlayerState? GetPlayerStateByTurnIndex(ulong clientId)
+        {
+            return GetPlayerByClientId(clientId);
+        }
+
+        public PlayerState? GetPlayerByClientId(ulong clientId)
+        {
+            for (int i = 0; i < playerStates.Count; i++)
+            {
+                if (playerStates[i].ClientId == clientId)
+                {
+                    return playerStates[i];
+                }
+            }
+
+            return null;
+        }
+
+        public void UpdatePlayerHealth(List<PlayerState> newPlayerStates)
+        {
+            
+            foreach (var item in newPlayerStates)
+            {
+                for (int i = 0; i < playerStates.Count; i++)
+                {
+                    if (playerStates[i].ClientId == item.ClientId)
+                    {
+                        playerStates[i] = new PlayerState(playerStates[i].ClientId, playerStates[i].PlayerName.ToString(), playerStates[i].PlayerColor, item.Score, playerStates[i].IsAlive, playerStates[i].HasDoneFirstAction);
+                        UIManager.Instance.UpdatePlayerCard(playerStates[i]);
+                        Debug.Log($"UpdatePlayerHealth {playerStates[i].ClientId} {playerStates[i].Score} --> {item.Score}");
+                    }
+                }
+            }
+        }
+        public void UpdatePlayerIsAlive()
+        {
+            
+            for (int i = 0; i < playerStates.Count; i++)
+            {
+                if (playerStates[i].IsAlive && playerStates[i].HasDoneFirstAction)
+                {
+                    Debug.Log($"UpdatePlayerIsAlive {playerStates[i].PlayerName} Scre-{playerStates[i].Score}");
+                    if (playerStates[i].Score < 1)
+                    {
+                        Debug.Log($"Player dies {playerStates[i].PlayerName}");
+                        playerStates[i] = new PlayerState(
+                            playerStates[i].ClientId,
+                            playerStates[i].PlayerName.ToString(),
+                            playerStates[i].PlayerColor,
+                            playerStates[i].Score,
+                            false,
+                            playerStates[i].HasDoneFirstAction
+                        );
+                        UIManager.Instance.DisablePlayerCard(playerStates[i]);
+                    }
+                }
+            }
+        }
+
     }
 }
