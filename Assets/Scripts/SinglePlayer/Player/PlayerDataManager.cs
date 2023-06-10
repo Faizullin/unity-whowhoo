@@ -2,17 +2,17 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Singleplayer;
-using UnityEngine.SceneManagement;
+using Singleplayer.Lobby.UI;
 
 namespace Singleplayer.Player {
 
     public class PlayerDataManager : SingletonPersistent<PlayerDataManager>
     {
 
-        public Dictionary<ulong, PlayerData> PlayersData = new()
+        public Dictionary<ulong, PlayerState> PlayersData = new()
         {
-            { 1, new PlayerData(1, "Player 1", Color.red) },
-            { 2, new PlayerData(2, "Player 2", Color.blue) },
+            { 1, new PlayerState(1, "P-1", Color.red, 0, true, false) },
+            { 2, new PlayerState(2, "P-2", Color.blue, 0, true, false) },
         };
 
         public List<ulong> GetSortedKeys()
@@ -20,6 +20,15 @@ namespace Singleplayer.Player {
             List<ulong> sortedKeys = new(PlayersData.Keys);
             sortedKeys.Sort();
             return sortedKeys;
+        }
+
+        public void SetLobbyPlayerData(List<LobbyPlayerState> lobbyPlayerStates)
+        {
+            PlayersData.Clear();
+            foreach (var item in lobbyPlayerStates)
+            {
+                PlayersData.Add(item.ClientId, new PlayerState(item.ClientId, item.PlayerName, item.PlayerColor, 0, true, false));
+            }
         }
     }
 }

@@ -3,7 +3,6 @@ using System.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using Multiplayer.Connection;
 
 // Important: the names in the enum value should be the same as the scene you're trying to load
 public enum SceneName : byte
@@ -11,12 +10,10 @@ public enum SceneName : byte
     Bootstrap,
     MainMenuScene,
     TileMapEditorScene,
-    SingleplayerCharacterSelectionScene,
+    SingleplayerLobbyScene,
     SingleplayerScene,
-    MultiplayerCharacterSelectionScene,
+    MultiplayerLobbyScene,
     MultiplayerScene,
-    Victory,
-    Defeat,
 };
 
 public class LoadingSceneManager : SingletonPersistent<LoadingSceneManager>
@@ -27,9 +24,6 @@ public class LoadingSceneManager : SingletonPersistent<LoadingSceneManager>
 
     public bool IsEdit = false;
 
-
-    // After running the menu scene, which initiates this manager, we subscribe to these events
-    // due to the fact that when a network session ends it cannot longer listen to them.
     public void Init()
     {
         NetworkManager.Singleton.SceneManager.OnLoadComplete -= OnLoadComplete;
@@ -44,11 +38,7 @@ public class LoadingSceneManager : SingletonPersistent<LoadingSceneManager>
     // Coroutine for the loading effect. It use an alpha in out effect
     private IEnumerator Loading(SceneName sceneToLoad, bool isNetworkSessionActive)
     {
-        // LoadingFadeEffect.Instance.FadeIn();
-
-        // Here the player still sees the black screen
-        // yield return new WaitUntil(() => LoadingFadeEffect.s_canLoad);
-                yield return new WaitUntil(() => true);
+        yield return new WaitUntil(() => true);
 
         if (isNetworkSessionActive)
         {
@@ -72,15 +62,6 @@ public class LoadingSceneManager : SingletonPersistent<LoadingSceneManager>
     private void LoadSceneLocal(SceneName sceneToLoad)
     {
         SceneManager.LoadScene(sceneToLoad.ToString());
-        switch (sceneToLoad)
-        {
-            case SceneName.MainMenuScene:
-                if (AudioManager.Instance != null)
-                    AudioManager.Instance.PlayMusic(AudioManager.MusicName.intro);
-                break;
-            default:
-                break;
-        }
     }
 
     // Load the scene using the SceneManager from NetworkManager. Use this when there is an active
@@ -103,32 +84,15 @@ public class LoadingSceneManager : SingletonPersistent<LoadingSceneManager>
 
         Enum.TryParse(sceneName, out m_sceneActive);
 
-        if (!ClientConnection.Instance.CanClientConnect(clientId))
-            return;
-
         // What to initially do on every scene when it finishes loading
-        switch (m_sceneActive)
-        {
-            // When a client/host connects tell the manager
-            //case SceneName.SingleplayerCharacterSelectionScene:
-            //    Singleplayer.CharacterSelection.CharacterSelectionManager.Instance.ServerSceneInit(clientId);
-            //    break;
-
-            case SceneName.MultiplayerCharacterSelectionScene:
-                Multiplayer.CharacterSelection.CharacterSelectionManager.Instance.ServerSceneInit(clientId);
-                break;
-
-            // When a client/host connects tell the manager to create the ship and change the music
-            case SceneName.MultiplayerScene:
-                Multiplayer.GameManager.Instance.ServerSceneInit(clientId);
-                break;
-
-            // When a client/host connects tell the manager to create the player score ships and
-            // play the right SFX
-            case SceneName.Victory:
-            case SceneName.Defeat:
-                EndGameManager.Instance.ServerSceneInit(clientId);
-                break;
-        }
+        //switch (m_sceneActive)
+        //{
+        //    // When a client/host connects tell the manager to create the player score ships and
+        //    // play the right SFX
+        //    case SceneName.Victory:
+        //    case SceneName.Defeat:
+        //        EndGameManager.Instance.ServerSceneInit(clientId);
+        //        break;
+        //}
     }
 }

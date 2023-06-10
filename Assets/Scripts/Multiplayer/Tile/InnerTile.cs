@@ -53,7 +53,7 @@ namespace Multiplayer.Tiles
             return m_tile;
         }
 
-        public void SelectStateByUser(PlayerData player)
+        public void SelectStateByUser(PlayerState player)
         {
             m_spriteRenderer.color = player.PlayerColor;
             IsSelectedByPlayer = true;

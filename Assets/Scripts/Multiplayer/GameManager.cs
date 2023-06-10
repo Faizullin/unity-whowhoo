@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Unity.Netcode;
-using Multiplayer;
+using Multiplayer.UI;
 using Multiplayer.Player;
+using DapperDino.UMT.Lobby.Networking;
 
 namespace Multiplayer
 {
@@ -19,48 +20,125 @@ namespace Multiplayer
     public class GameManager : SingletonNetwork<GameManager>
     {
         public GameStatus CurrentGameStatus = GameStatus.IDLE;
-
-        // public static Action<ulong> OnPlayerDefeated;
-
         [SerializeField]
-        private CharacterDataSO[] m_charactersData;
+        private ServerGameNetPortal m_serverGameNetPortal;
 
-        [SerializeField]
-        private PlayerUI[] m_playersUI;
+        private NetworkList<PlayerState> playerStates;
 
-        [SerializeField]
-        private GameObject m_deathUI;
-
-        private int m_numberOfPlayerConnected;
-        private List<ulong> m_connectedClients = new();
-        private List<PlayerShipController> m_playerShips = new();
-
-
-        private void Start()
+        private void Awake()
         {
-            SceneInit();
+            base.Awake();
+            playerStates = new NetworkList<PlayerState>();
         }
 
-        public void SceneInit()
+        public override void OnNetworkSpawn()
         {
-            CurrentGameStatus = GameStatus.RUNNING;
-            StartGame();
-        }
-        public void StartGame()
-        {
-            if (NetworkManager.Singleton != null)
+            Debug.Log($"OnNetworkSpawn IsClient-{IsClient}");
+            if (IsClient)
             {
-                NetworkManager.Singleton.StartHost();
+                playerStates.OnListChanged += HandlePlayersStateChanged;
+                UIManager.Instance.CloseAllUIPanels();
             }
-            var playersData = PlayerDataManager.Instance.PlayersData;
-            if(playersData.Count < 2)
+
+            if (IsServer)
             {
-                LoadingSceneManager.Instance.LoadScene(SceneName.MainMenuScene ,false);
+                NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
+                NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnect;
+
+                foreach (NetworkClient client in NetworkManager.Singleton.ConnectedClientsList)
+                {
+                    HandleClientConnected(client.ClientId);
+                }
+
+                StartGame();
+            }
+        }
+
+        private void HandlePlayersStateChanged(NetworkListEvent<PlayerState> state)
+        {
+            if (state.Type == NetworkListEvent<PlayerState>.EventType.Add)
+            {
+                Debug.Log($"HandlePlayersStateChanged {state.Type} ({playerStates.Count})");
+                AddPlayerCardClientRpc(state.Value);
+                return;
+            } else if (state.Type == NetworkListEvent<PlayerState>.EventType.Remove || state.Type == NetworkListEvent<PlayerState>.EventType.RemoveAt)
+            {
+                Debug.Log($"HandlePlayersStateChanged {state.Type} ({playerStates.Count})");
+                DisablePlayerCardClientRpc(state.Value);
                 return;
             }
-            UIManager.Instance.CloseAllUIPanels();
+            else if (state.Type == NetworkListEvent<PlayerState>.EventType.Value)
+            {
+                Debug.Log($"HandlePlayersStateChanged {state.Type} ({playerStates.Count})");
+                UIManager.Instance.UpdatePlayerCard(state.Value);
+            }
+        }
+
+        private void HandleClientConnected(ulong clientId)
+        {
+            // var playerData = TestStartManager.Instance.GetPlayer();
+            //Debug.Log($"Main.HandleClientConnected {clientId} --> {playerData.PlayerName}");
+
+            //bool tmpHasPlayerState = false;
+            //for (int i = 0; i < playerStates.Count; i++)
+            //{
+            //    if (playerStates[i].ClientId == clientId)
+            //    {
+            //        tmpHasPlayerState = true;
+            //        break;
+            //    }
+            //}
+            //if (!tmpHasPlayerState)
+            //{
+            //    playerStates.Add(playerData);
+            //}
+
+            var playerData = ServerGameNetPortal.Instance.GetPlayerData(clientId);
+
+            if (!playerData.HasValue) { return; }
+
+            var playerState = new PlayerState(
+                clientId,
+                playerData.Value.PlayerName,
+                playerData.Value.PlayerColor,
+                0,
+                true,
+                false
+            );
+
+            playerStates.Add(playerState);
+        }
+
+        [ClientRpc]
+        private void AddPlayerCardClientRpc(PlayerState playerState)
+        {
+            UIManager.Instance.AddPlayerCard(playerState);
+        }
+
+        [ClientRpc]
+        private void DisablePlayerCardClientRpc(PlayerState playerState)
+        {
+            UIManager.Instance.DisablePlayerCard(playerState);
+        }
+
+        private void HandleClientDisconnect(ulong clientId)
+        {
+            for (int i = 0; i < playerStates.Count; i++)
+            {
+                if (playerStates[i].ClientId == clientId)
+                {
+                    playerStates.RemoveAt(i);
+                    break;
+                }
+            }
+        }
+
+        public void StartGame()
+        {
+            if (!IsServer) return;
+
             UpdatePlayerStats();
-            BoardManager.Instance.StartGame(playersData);
+            BoardManager.Instance.StartGame();            
         }
 
 
@@ -74,7 +152,6 @@ namespace Multiplayer
 
         public void OnPauseClick()
         {
-            Debug.Log($"OnPauseClick isLocalPlayer-{IsLocalPlayer} OwnerClientId-{OwnerClientId} IsOwner-{IsOwner}");
             if (CurrentGameStatus == GameStatus.PAUSED)
             {
                 CurrentGameStatus = GameStatus.RUNNING;
@@ -84,12 +161,12 @@ namespace Multiplayer
             }
             if (IsHost || IsServer)
             {
-                Time.timeScale = CurrentGameStatus == GameStatus.PAUSED ? 0 : 1;
+                // Time.timeScale = CurrentGameStatus == GameStatus.PAUSED ? 0 : 1;
             }
             
             UIManager.Instance.OpenPauseUI(CurrentGameStatus == GameStatus.PAUSED);
-
         }
+
         public void ResumeGame()
         {
             if (IsHost || IsServer)
@@ -99,7 +176,7 @@ namespace Multiplayer
             UIManager.Instance.OpenPauseUI(false);
             CurrentGameStatus = GameStatus.RUNNING;
         }
-        public void OnGameEnd(PlayerData player)
+        public void OnGameEnd(PlayerState player)
         {
             CurrentGameStatus = GameStatus.FINISHED;
             UIManager.Instance.OpenGameEndUI(true, $"Winner {player.PlayerName}({player.Score})");
@@ -118,18 +195,24 @@ namespace Multiplayer
         public void UpdatePlayerStats()
         {
             PlayersHealthUpdate();
-            UIManager.Instance.UpdatePlayerStats();
         }
         private void PlayersHealthUpdate()
         {
-            foreach (PlayerData playerData in PlayerDataManager.Instance.PlayersData.Values)
+            for (int i = 0; i < playerStates.Count; i++)
             {
-                if (playerData.IsAlive && playerData.HasDoneFirstAction)
+                if (playerStates[i].IsAlive && playerStates[i].HasDoneFirstAction)
                 {
-                    if (playerData.Score < 1)
+                    if (playerStates[i].Score < 1)
                     {
-                        Debug.Log($"Player dies {playerData.PlayerName}");
-                        playerData.IsAlive = false;
+                        Debug.Log($"Player dies {playerStates[i].PlayerName}");
+                        playerStates[i] = new PlayerState(
+                            playerStates[i].ClientId,
+                            playerStates[i].PlayerName.ToString(),
+                            playerStates[i].PlayerColor,
+                            playerStates[i].Score,
+                            false,
+                            playerStates[i].HasDoneFirstAction
+                        );
                     }
                 }
             }
@@ -138,7 +221,7 @@ namespace Multiplayer
         public bool CheckForWinner()
         {
             int alivePlayersCount = 0;
-            foreach (PlayerData playerData in PlayerDataManager.Instance.PlayersData.Values)
+            foreach (PlayerState playerData in playerStates)
             {
                 if (playerData.IsAlive)
                 {
@@ -153,74 +236,53 @@ namespace Multiplayer
             if(!CheckForWinner())
             {
                 Time.timeScale = 0;
-                OnGameEnd(BoardManager.Instance.GetCurrentPlayer());
-            }
-        }
-
-
-        [ClientRpc]
-        private void SetPlayerUIClientRpc(int charIndex, string playerShipName)
-        {
-            // Not optimal, but this is only called one time per ship
-            // We do this because we can not pass a GameObject in an RPC
-            GameObject playerSpaceship = GameObject.Find(playerShipName);
-
-            PlayerShipController playerShipController =
-                playerSpaceship.GetComponent<PlayerShipController>();
-
-            m_playersUI[m_charactersData[charIndex].playerId].SetUI(
-                m_charactersData[charIndex].playerId,
-                m_charactersData[charIndex].iconSprite,
-                m_charactersData[charIndex].iconDeathSprite,
-                playerShipController.health.Value,
-                m_charactersData[charIndex].darkColor);
-
-            // Pass the UI to the player
-            playerShipController.playerUI = m_playersUI[m_charactersData[charIndex].playerId];
-        }
-        // So this method is called on the server each time a player enters the scene.
-        // Because of that, if we create the ship when a player connects we could have a sync error
-        // with the other clients because maybe the scene on the client is no yet loaded.
-        // To fix this problem we wait until all clients call this method then we create the ships
-        // for every client connected 
-        public void ServerSceneInit(ulong clientId)
-        {
-            // Save the clients 
-            m_connectedClients.Add(clientId);
-
-            // Check if is the last client
-            if (m_connectedClients.Count < NetworkManager.Singleton.ConnectedClients.Count)
-                return;
-
-            // For each client spawn and set UI
-            foreach (var client in m_connectedClients)
-            {
-                int index = 0;
-
-                foreach (CharacterDataSO data in m_charactersData)
+                var currentPlayer = BoardManager.Instance.GetCurrentPlayer();
+                if (currentPlayer != null)
                 {
-                    if (data.isSelected && data.clientId == client)
-                    {
-                        GameObject playerSpaceship =
-                            NetworkObjectSpawner.SpawnNewNetworkObjectChangeOwnershipToClient(
-                                data.spaceshipPrefab,
-                                transform.position,
-                                data.clientId,
-                                true);
-
-                        PlayerShipController playerShipController =
-                            playerSpaceship.GetComponent<PlayerShipController>();
-                        playerShipController.characterData = data;
-
-                        m_playerShips.Add(playerShipController);
-                        SetPlayerUIClientRpc(index, playerSpaceship.name);
-
-                        m_numberOfPlayerConnected++;
-                    }
-
-                    index++;
+                    OnGameEnd(currentPlayer.Value);
                 }
             }
         }
+
+        public PlayerState? GetPlayerStateByTurnIndex(ulong clientId)
+        {
+            for (int i = 0; i < playerStates.Count; i++)
+            {
+                if (playerStates[i].ClientId == clientId)
+                {
+                    return playerStates[i];
+                }
+            }
+            return null;
+        }
+
+        public List<ulong> GetSortedClientIds()
+        {
+            List<ulong> result = new();
+            foreach (var item in playerStates)
+            {
+                result.Add(item.ClientId);
+            }
+            result.Sort();
+            return result;
+        }
+
+        public void UpdatePlayerStates(PlayerState[] newPlayerStates)
+        {
+            Debug.Log($"GameManage.UpdatePlayerStates: {newPlayerStates.Length} {playerStates.Count}");
+            //playerStates.SetDirty(true);
+            foreach (var item in newPlayerStates)
+            {
+                for (int i = 0; i < playerStates.Count; i++)
+                {
+                    if (BoardManager.Instance.GetTilePlayerIdFromClientId(playerStates[i].ClientId) == item.ClientId)
+                    {
+                        playerStates[i] = new PlayerState(playerStates[i].ClientId, playerStates[i].PlayerName.ToString(), playerStates[i].PlayerColor, item.Score, playerStates[i].IsAlive, playerStates[i].HasDoneFirstAction);
+                    }
+                }
+            }
+            // playerStates.SetDirty(false);
+        }
+
     }
 }
