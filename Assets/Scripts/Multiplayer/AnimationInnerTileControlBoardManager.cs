@@ -57,7 +57,7 @@ namespace Multiplayer
                 {
                     animationInnerTileDataList.Add(new AnimationInnerTileData(
                         innerTile.Value, neighbourTiles[innerTile.Key].GetInnerTileByDirection(Directions.GetOppositeDirection(innerTile.Key)), currentPlayer.PlayerColor,
-                        Directions.GetVector2FromDirection(innerTile.Value.direction), BoardManager.Instance.GetTilePlayerIdFromClientId(currentPlayer.ClientId)
+                        Directions.GetVector2FromDirection(innerTile.Value.direction), (long)currentPlayer.ClientId
                     ));
                 }
             }
@@ -70,21 +70,18 @@ namespace Multiplayer
             {
                 animInnerTile.StartMove();
             }
-            Debug.Log($"Created anim inner tiles{m_currentAnimationInnerTiles.Count}");
+            // Debug.Log($"Created anim inner tiles{m_currentAnimationInnerTiles.Count}");
             if (m_onEndAnimInnerTileMovementCoroutine != null)
             {
                 Debug.Log($"Warning: StartMoveAll: m_onEndAnimInnerTileMovementCoroutine is not null");
             }
-            m_onEndAnimInnerTileMovementCoroutine = StartCoroutine(TileMovementCoroutine());
+            //m_onEndAnimInnerTileMovementCoroutine = StartCoroutine(TileMovementCoroutine());
+            StartCoroutine(TileMovementCoroutine());
         }
         private IEnumerator TileMovementCoroutine()
         {
             float moveTime = 2.0f;
             yield return new WaitForSeconds(moveTime);
-            OnAnimationInnerTileMovementEnd();
-        }
-        private void OnAnimationInnerTileMovementEnd()
-        {
             BoardManager.Instance.OnAnimationInnerTileMovementEnd();
         }
 

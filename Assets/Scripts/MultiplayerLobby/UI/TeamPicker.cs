@@ -19,8 +19,7 @@ namespace Multiplayer.Lobby.UI
 
     public class TeamPicker : MonoBehaviour
     {
-        [SerializeField]
-        private List<TeamData> m_teamsDataList = new()
+        public List<TeamData> TeamsDataList = new()
         {
             new TeamData(new Color(245 /255f, 82 / 255f, 82 / 255f), "Red"),
             new TeamData(new Color(59 / 255f, 233 / 255f, 58 / 255f), "Green"),
@@ -31,16 +30,14 @@ namespace Multiplayer.Lobby.UI
 
         private void Awake()
         {
-            m_teamsCount = m_teamsDataList.Count;
+            m_teamsCount = TeamsDataList.Count;
         }
 
         public void SelectTeam(int teamIndex)
         {
-            ulong localClientId = NetworkManager.Singleton.LocalClientId;
-            Debug.Log($"SelectTeam {localClientId} -> {teamIndex}");
             if (teamIndex > m_teamsCount - 1) { return; }
 
-            GetComponent<LobbyUIManager>().SetPlayerTeamServerRpc((byte)teamIndex, m_teamsDataList[teamIndex].TeamColor);
+            GetComponent<LobbyUIManager>().SetPlayerTeamServerRpc((byte)teamIndex, TeamsDataList[teamIndex].TeamColor);
         }
     }
 

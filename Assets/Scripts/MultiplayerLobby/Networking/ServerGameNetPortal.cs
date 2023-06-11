@@ -180,8 +180,6 @@ namespace DapperDino.UMT.Lobby.Networking
             var clientId = request.ClientNetworkId;
             var connectionData = request.Payload;
 
-            Debug.Log($"ApprovalCheck {connectionData.Length > MaxConnectionPayload} ({clientId == NetworkManager.Singleton.LocalClientId})");
-
             if (connectionData.Length > MaxConnectionPayload)
             {
                 response.Approved = false;

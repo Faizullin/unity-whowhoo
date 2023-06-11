@@ -37,7 +37,7 @@ namespace Multiplayer.Tiles
     {
         public Color SelectColor;
         public Vector3 MoveDirection;
-        public ulong PlayerId;
+        public long PlayerId;
         public InnerTileData FromInnerTileData;
         public InnerTileData ToInnerTileData = new();
 
@@ -50,7 +50,7 @@ namespace Multiplayer.Tiles
             this.PlayerId = 0;
         }
 
-        public AnimationInnerTileData(InnerTile FromInnerTile, InnerTile ToInnerTile, Color SelectColor, Vector3 MoveDirection, ulong PlayerId)
+        public AnimationInnerTileData(InnerTile FromInnerTile, InnerTile ToInnerTile, Color SelectColor, Vector3 MoveDirection, long PlayerId)
         {
             this.FromInnerTileData = new InnerTileData(FromInnerTile.GetParentTile().Index, FromInnerTile.direction);
             this.ToInnerTileData = new InnerTileData(ToInnerTile.GetParentTile().Index, ToInnerTile.direction);
@@ -81,7 +81,7 @@ namespace Multiplayer.Tiles
 
         public Color SelectColor;
         public Vector3 MoveDirection;
-        public ulong PlayerId;
+        public long PlayerId = -1;
 
         private void Awake()
         {

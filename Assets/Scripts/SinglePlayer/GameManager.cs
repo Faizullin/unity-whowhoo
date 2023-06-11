@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using Singleplayer.Player;
 
 namespace Singleplayer
@@ -18,10 +17,12 @@ namespace Singleplayer
     {
         public GameStatus CurrentGameStatus = GameStatus.IDLE;
 
-        private List<PlayerState> playerStates = new();
+        [SerializeField]
+        private List<PlayerState> playerStates;
 
         private void Start()
         {
+            playerStates = new();
             CurrentGameStatus = GameStatus.RUNNING;
             UIManager.Instance.CloseAllUIPanels();
 
@@ -52,6 +53,7 @@ namespace Singleplayer
         public void StartGame()
         {
             UpdatePlayerIsAlive();
+            Time.timeScale = 1;
             BoardManager.Instance.StartGame();
         }
 
@@ -63,12 +65,26 @@ namespace Singleplayer
             }
         }
 
+        public void OnGameEnd(PlayerState player)
+        {
+            CurrentGameStatus = GameStatus.FINISHED;
+            UIManager.Instance.OpenGameEndUI(true, $"Winner {player.PlayerName}({player.Score})");
+            BoardManager.Instance.gameObject.SetActive(false);
+        }
+
+        public void ResumeGame()
+        {
+            Time.timeScale = 1;
+            UIManager.Instance.OpenPauseUI(false);
+            CurrentGameStatus = GameStatus.RUNNING;
+        }
         public void OnPauseClick()
         {
             if (CurrentGameStatus == GameStatus.PAUSED)
             {
                 CurrentGameStatus = GameStatus.RUNNING;
-            } else if (CurrentGameStatus == GameStatus.RUNNING)
+            }
+            else if (CurrentGameStatus == GameStatus.RUNNING)
             {
                 CurrentGameStatus = GameStatus.PAUSED;
             }
@@ -76,26 +92,10 @@ namespace Singleplayer
             UIManager.Instance.OpenPauseUI(CurrentGameStatus == GameStatus.PAUSED);
 
         }
-        public void ResumeGame()
-        {
-            Time.timeScale = 1;
-            UIManager.Instance.OpenPauseUI(false);
-            CurrentGameStatus = GameStatus.RUNNING;
-        }
-        public void OnGameEnd(PlayerState player)
-        {
-            CurrentGameStatus = GameStatus.FINISHED;
-            UIManager.Instance.OpenGameEndUI(true, $"Winner {player.PlayerName}({player.Score})");
-            BoardManager.Instance.gameObject.SetActive(false);
-        }
-        public void OnGameRestart()
-        {
-            string currentSceneName = SceneManager.GetActiveScene().name;
-            SceneManager.LoadScene(currentSceneName);
-        }
 
         public void LeaveGame()
         {
+            Destroy(PlayerDataManager.Instance.gameObject);
             LoadingSceneManager.Instance.LoadScene(SceneName.MainMenuScene, false);
         }
 
@@ -132,11 +132,6 @@ namespace Singleplayer
             return result;
         }
 
-        public PlayerState? GetPlayerStateByTurnIndex(ulong clientId)
-        {
-            return GetPlayerByClientId(clientId);
-        }
-
         public PlayerState? GetPlayerByClientId(ulong clientId)
         {
             for (int i = 0; i < playerStates.Count; i++)
@@ -159,9 +154,12 @@ namespace Singleplayer
                 {
                     if (playerStates[i].ClientId == item.ClientId)
                     {
-                        playerStates[i] = new PlayerState(playerStates[i].ClientId, playerStates[i].PlayerName.ToString(), playerStates[i].PlayerColor, item.Score, playerStates[i].IsAlive, playerStates[i].HasDoneFirstAction);
+                        playerStates[i] = new PlayerState(playerStates[i])
+                        {
+                            HasDoneFirstAction = item.HasDoneFirstAction,
+                            Score = item.Score
+                        };
                         UIManager.Instance.UpdatePlayerCard(playerStates[i]);
-                        Debug.Log($"UpdatePlayerHealth {playerStates[i].ClientId} {playerStates[i].Score} --> {item.Score}");
                     }
                 }
             }
@@ -173,10 +171,10 @@ namespace Singleplayer
             {
                 if (playerStates[i].IsAlive && playerStates[i].HasDoneFirstAction)
                 {
-                    Debug.Log($"UpdatePlayerIsAlive {playerStates[i].PlayerName} Scre-{playerStates[i].Score}");
+                    // Debug.Log($"UpdatePlayerIsAlive {playerStates[i].PlayerName} Score-{playerStates[i].Score}");
                     if (playerStates[i].Score < 1)
                     {
-                        Debug.Log($"Player dies {playerStates[i].PlayerName}");
+                        Debug.Log($"Player dies {playerStates[i].PlayerName} ({playerStates[i].ClientId})");
                         playerStates[i] = new PlayerState(
                             playerStates[i].ClientId,
                             playerStates[i].PlayerName.ToString(),
@@ -190,6 +188,5 @@ namespace Singleplayer
                 }
             }
         }
-
     }
 }

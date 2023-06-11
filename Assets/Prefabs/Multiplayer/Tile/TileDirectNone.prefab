@@ -75,7 +75,8 @@ MonoBehaviour:
   m_innerTilePrefab: {fileID: 8555815603422595255, guid: d1e6fbe42484a88449982c9cad35b516, type: 3}
   IsFullOfInnerTiles: 0
   HasInnerTiles: 1
-  PlayerId: 0
+  PlayerId: -1
+  Index: 0
 --- !u!1 &8906064106104173975
 GameObject:
   m_ObjectHideFlags: 0

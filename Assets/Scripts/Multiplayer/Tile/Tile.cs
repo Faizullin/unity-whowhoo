@@ -6,14 +6,14 @@ namespace Multiplayer.Tiles
 {
     public class Tile : MonoBehaviour
     {
-        private Dictionary<Direction, InnerTile> m_innerTiles = new();
+        private readonly Dictionary<Direction, InnerTile> m_innerTiles = new();
         [SerializeField] private InnerTile m_innerTilePrefab;
 
-        private float m_gridSize = 4f;
+        private readonly float m_gridSize = 4f;
 
         public bool IsFullOfInnerTiles = false;
         public bool HasInnerTiles = true;
-        public ulong PlayerId = 0;
+        public long PlayerId = -1;
 
         public int Index;
 
@@ -90,7 +90,7 @@ namespace Multiplayer.Tiles
                     innerTile.ClearSelect();
                 }
             }
-            PlayerId = 0;            
+            PlayerId = -1;            
         }
 
         public void RemoveInnerTile(Direction key)

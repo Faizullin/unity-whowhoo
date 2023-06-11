@@ -84,6 +84,7 @@ namespace TileMapEditor
         private void LoadMap(string path)
         {
             TileDataList tileDataList = LoadingMapManager.LoadMap(path);
+            
             foreach (TileData tileData in tileDataList.tiles)
             {
                 var newTile = Instantiate(m_tilePrefab, tileData.position, Quaternion.identity, m_tilesListBackground.transform);
@@ -91,6 +92,7 @@ namespace TileMapEditor
                 {
                     newTile.AddInnerTileInDirection(key);
                 }
+                tileList.Add(newTile);
             }
         }
 

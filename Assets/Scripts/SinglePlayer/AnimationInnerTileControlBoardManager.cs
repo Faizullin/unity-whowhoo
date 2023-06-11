@@ -11,13 +11,13 @@ namespace Singleplayer
         [SerializeField]
         private AnimationInnerTile m_animationInnerTilePrefab;
 
-        private List<AnimationInnerTile> m_currentAnimationInnerTiles = new();
+        private Dictionary<int, AnimationInnerTile> m_currentAnimationInnerTiles = new();
         private Coroutine m_onEndAnimInnerTileMovementCoroutine;
 
         public AnimationInnerTile GetAndAddAnimationInnerTile(InnerTile innerTileFrom, InnerTile innerTileTo, PlayerState currentPlayerState)
         {
             AnimationInnerTile animInnerTile = GetAnimationInnerTile(innerTileFrom, innerTileTo, currentPlayerState);
-            m_currentAnimationInnerTiles.Add(animInnerTile);
+            m_currentAnimationInnerTiles.Add(innerTileFrom.GetParentTile().Index + (int)innerTileFrom.direction, animInnerTile);
             return animInnerTile;
         }
         public AnimationInnerTile GetAnimationInnerTile(InnerTile innerTileFrom, InnerTile innerTileTo, PlayerState currentPlayerState)
@@ -32,39 +32,31 @@ namespace Singleplayer
             return animInnerTile;
         }
 
-        public List<AnimationInnerTile> GetAnimationInnerTilesList()
+        public Dictionary<int, AnimationInnerTile> GetAnimationInnerTilesList()
         {
             return m_currentAnimationInnerTiles;
         }
 
         public void StartMoveAll()
         {
-            foreach (AnimationInnerTile animInnerTile in m_currentAnimationInnerTiles)
+            foreach (AnimationInnerTile animInnerTile in m_currentAnimationInnerTiles.Values)
             {
                 animInnerTile.StartMove();
             }
-            if (m_onEndAnimInnerTileMovementCoroutine != null)
-            {
-                Debug.Log($"Warning: StartMoveAll: m_onEndAnimInnerTileMovementCoroutine is not null");
-                StopCoroutine(m_onEndAnimInnerTileMovementCoroutine);
-            }
-            m_onEndAnimInnerTileMovementCoroutine = StartCoroutine(TileMovementCoroutine());
+            // m_onEndAnimInnerTileMovementCoroutine =
+            StartCoroutine(TileMovementCoroutine());
         }
         private IEnumerator TileMovementCoroutine()
         {
             float moveTime = 2.0f;
             yield return new WaitForSeconds(moveTime);
-            OnAnimationInnerTileMovementEnd();
-        }
-        private void OnAnimationInnerTileMovementEnd()
-        {
             BoardManager.Instance.OnAnimationInnerTileMovementEnd();
         }
 
         public void StopMoveAll()
         {
 
-            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles)
+            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles.Values)
             {
                 animTile.GetComponent<Rigidbody2D>().velocity = Vector2.zero;
             }
@@ -72,7 +64,7 @@ namespace Singleplayer
 
         public void DestroyAll()
         {
-            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles)
+            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles.Values)
             {
                 Destroy(animTile.gameObject);
             }
@@ -95,7 +87,7 @@ namespace Singleplayer
         {
             List<AnimationInnerTile> activeAnimeInnertTiles = new();
             List<InnerTile> activeInnertTiles = new();
-            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles)
+            foreach (AnimationInnerTile animTile in m_currentAnimationInnerTiles.Values)
             {
                 if (!activeInnertTiles.Contains(animTile.ToInnerTile))
                 {

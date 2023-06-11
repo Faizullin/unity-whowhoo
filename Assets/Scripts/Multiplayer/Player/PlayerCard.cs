@@ -13,7 +13,6 @@ namespace Multiplayer.UI
         private TextMeshProUGUI m_playerNameText;
         [SerializeField]
         private TextMeshProUGUI m_playerScoreText;
-        // Start is called before the first frame update
 
         public void InitDisplay(PlayerState playerState)
         {

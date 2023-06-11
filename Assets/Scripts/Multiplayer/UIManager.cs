@@ -30,7 +30,7 @@ namespace Multiplayer
         public void AddPlayerCard(PlayerState playerState)
         {
             GameObject newPlayerCard = Instantiate(m_playerCardPrefab);
-            newPlayerCard.transform.SetParent(m_playersCardListUI.GetComponentInChildren<VerticalLayoutGroup>().transform, false);
+            newPlayerCard.transform.SetParent(m_playersCardListUI.GetComponentInChildren<GridLayoutGroup>().transform, false);
             var newPlayerCardScriptComponent = newPlayerCard.GetComponent<PlayerCard>();
             newPlayerCardScriptComponent.InitDisplay(playerState);
             m_playerCards.Add(playerState.ClientId, newPlayerCardScriptComponent);
@@ -39,12 +39,16 @@ namespace Multiplayer
         public void UpdatePlayerCard(PlayerState playerState, bool addOnNotExist = false)
         {
             // Debug.Log($"UIManager.UpdatePlayerCard {playerState.ClientId}, Score-{playerState.Score}");
-            foreach (var key in m_playerCards.Keys)
+            
+            if (m_playerCards.ContainsKey(playerState.ClientId))
             {
-                if (m_playerCards.ContainsKey(playerState.ClientId))
+                if (playerState.IsAlive)
                 {
-                    m_playerCards[key].UpdateScoreDisplay(playerState.Score);
-                    return;
+                    m_playerCards[playerState.ClientId].UpdateScoreDisplay(playerState.Score);
+                }
+                else
+                {
+                    m_playerCards[playerState.ClientId].UpdateScoreDisplay(playerState.Score);
                 }
             }
             // Debug.Log($"UIManager.UpdatePlayerCard -> AddPlayerCard {playerState.ClientId}, Score-{playerState.Score}");
@@ -54,19 +58,6 @@ namespace Multiplayer
                 return;
             }
             // Debug.Log($"Warning: UpdatePlayerCard: Player Card doea not exist for player - {playerState.ClientId}");
-        }
-
-        public void DisablePlayerCard(PlayerState playerState)
-        {
-            foreach (var key in m_playerCards.Keys)
-            {
-                if (m_playerCards.ContainsKey(playerState.ClientId))
-                {
-                    m_playerCards[key].DisableDisplay();
-                    return;
-                }
-            }
-            Debug.Log($"Warning: DisablePlayerCard: Player Card doea not exist for player - {playerState.ClientId}");
         }
 
         public void CloseAllUIPanels()
@@ -85,6 +76,16 @@ namespace Multiplayer
             m_pauseMenuUI.SetActive(false);
             m_pauseButton.SetActive(false);
             m_winnerText.GetComponent<TextMeshProUGUI>().text = message;
+        }
+
+        public void OnClickPause()
+        {
+            GameManager.Instance.OnPauseClick();
+
+        }
+        public void OnClickLeave()
+        {
+            GameManager.Instance.LeaveGame();
         }
     }
 }

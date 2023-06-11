@@ -33,7 +33,6 @@ namespace Multiplayer
 
         public override void OnNetworkSpawn()
         {
-            Debug.Log($"OnNetworkSpawn IsClient-{IsClient}");
             if (IsClient)
             {
                 playerStates.OnListChanged += HandlePlayersStateChanged;
@@ -58,18 +57,30 @@ namespace Multiplayer
         {
             if (state.Type == NetworkListEvent<PlayerState>.EventType.Add)
             {
-                Debug.Log($"HandlePlayersStateChanged {state.Type} ({playerStates.Count})");
                 AddPlayerCardClientRpc(state.Value);
                 return;
             } else if (state.Type == NetworkListEvent<PlayerState>.EventType.Remove || state.Type == NetworkListEvent<PlayerState>.EventType.RemoveAt)
             {
-                Debug.Log($"HandlePlayersStateChanged {state.Type} ({playerStates.Count})");
-                DisablePlayerCardClientRpc(state.Value);
-                return;
+                if (IsServer)
+                {
+                    var playerState = GetPlayerByClientId(state.Value.ClientId);
+                    for (int i = 0; i < playerStates.Count; i++)
+                    {
+                        if (state.Value.ClientId == playerStates[i].ClientId)
+                        {
+                            playerStates[i] = new PlayerState(state.Value)
+                            {
+                                IsAlive = false
+                            };
+                            return;
+                        }
+                    }
+                }
+                // DisablePlayerCardClientRpc(state.Value);
+                
             }
             else if (state.Type == NetworkListEvent<PlayerState>.EventType.Value)
             {
-                Debug.Log($"HandlePlayersStateChanged {state.Type} ({playerStates.Count})");
                 UIManager.Instance.UpdatePlayerCard(state.Value);
             }
         }
@@ -115,12 +126,6 @@ namespace Multiplayer
             UIManager.Instance.AddPlayerCard(playerState);
         }
 
-        [ClientRpc]
-        private void DisablePlayerCardClientRpc(PlayerState playerState)
-        {
-            UIManager.Instance.DisablePlayerCard(playerState);
-        }
-
         private void HandleClientDisconnect(ulong clientId)
         {
             for (int i = 0; i < playerStates.Count; i++)
@@ -137,7 +142,9 @@ namespace Multiplayer
         {
             if (!IsServer) return;
 
-            UpdatePlayerStats();
+            UpdatePlayerIsAlive();
+            Time.timeScale = 1;
+            CurrentGameStatus = GameStatus.RUNNING;
             BoardManager.Instance.StartGame();            
         }
 
@@ -167,55 +174,31 @@ namespace Multiplayer
             UIManager.Instance.OpenPauseUI(CurrentGameStatus == GameStatus.PAUSED);
         }
 
+        public void OnGameEnd(PlayerState player)
+        {
+            OnGameEndClientRpc(player);
+        }
+
+        [ClientRpc]
+        public void OnGameEndClientRpc(PlayerState player)
+        {
+            CurrentGameStatus = GameStatus.FINISHED;
+            Time.timeScale = 0;
+            UIManager.Instance.OpenGameEndUI(true, $"Winner {player.PlayerName}({player.Score})");
+            BoardManager.Instance.gameObject.SetActive(false);
+        }
         public void ResumeGame()
         {
-            if (IsHost || IsServer)
+            if (IsServer)
             {
                 Time.timeScale = 1;
             }
             UIManager.Instance.OpenPauseUI(false);
             CurrentGameStatus = GameStatus.RUNNING;
         }
-        public void OnGameEnd(PlayerState player)
-        {
-            CurrentGameStatus = GameStatus.FINISHED;
-            UIManager.Instance.OpenGameEndUI(true, $"Winner {player.PlayerName}({player.Score})");
-            BoardManager.Instance.gameObject.SetActive(false);
-        }
-        public void OnGameRestart()
-        {
-            string currentSceneName = SceneManager.GetActiveScene().name;
-            SceneManager.LoadScene(currentSceneName);
-        }
-
         public void LeaveGame()
         {
-            LoadingSceneManager.Instance.LoadScene(SceneName.MainMenuScene);
-        }
-        public void UpdatePlayerStats()
-        {
-            PlayersHealthUpdate();
-        }
-        private void PlayersHealthUpdate()
-        {
-            for (int i = 0; i < playerStates.Count; i++)
-            {
-                if (playerStates[i].IsAlive && playerStates[i].HasDoneFirstAction)
-                {
-                    if (playerStates[i].Score < 1)
-                    {
-                        Debug.Log($"Player dies {playerStates[i].PlayerName}");
-                        playerStates[i] = new PlayerState(
-                            playerStates[i].ClientId,
-                            playerStates[i].PlayerName.ToString(),
-                            playerStates[i].PlayerColor,
-                            playerStates[i].Score,
-                            false,
-                            playerStates[i].HasDoneFirstAction
-                        );
-                    }
-                }
-            }
+            ExitToMenu();
         }
 
         public bool CheckForWinner()
@@ -244,18 +227,6 @@ namespace Multiplayer
             }
         }
 
-        public PlayerState? GetPlayerStateByTurnIndex(ulong clientId)
-        {
-            for (int i = 0; i < playerStates.Count; i++)
-            {
-                if (playerStates[i].ClientId == clientId)
-                {
-                    return playerStates[i];
-                }
-            }
-            return null;
-        }
-
         public List<ulong> GetSortedClientIds()
         {
             List<ulong> result = new();
@@ -266,23 +237,87 @@ namespace Multiplayer
             result.Sort();
             return result;
         }
-
-        public void UpdatePlayerStates(PlayerState[] newPlayerStates)
+        public PlayerState? GetPlayerByClientId(ulong clientId)
         {
-            Debug.Log($"GameManage.UpdatePlayerStates: {newPlayerStates.Length} {playerStates.Count}");
-            //playerStates.SetDirty(true);
+            for (int i = 0; i < playerStates.Count; i++)
+            {
+                if (playerStates[i].ClientId == clientId)
+                {
+                    return playerStates[i];
+                }
+            }
+
+            return null;
+        }
+
+        public void UpdatePlayerHealth(List<PlayerState> newPlayerStates)
+        {
             foreach (var item in newPlayerStates)
             {
                 for (int i = 0; i < playerStates.Count; i++)
                 {
-                    if (BoardManager.Instance.GetTilePlayerIdFromClientId(playerStates[i].ClientId) == item.ClientId)
+                    if (playerStates[i].ClientId == item.ClientId)
                     {
-                        playerStates[i] = new PlayerState(playerStates[i].ClientId, playerStates[i].PlayerName.ToString(), playerStates[i].PlayerColor, item.Score, playerStates[i].IsAlive, playerStates[i].HasDoneFirstAction);
+                        playerStates[i] = new PlayerState(playerStates[i])
+                        {
+                            HasDoneFirstAction = item.HasDoneFirstAction,
+                            Score = item.Score
+                        };
+                        // UIManager.Instance.UpdatePlayerCard(playerStates[i]);
                     }
                 }
             }
-            // playerStates.SetDirty(false);
+        }
+        public void UpdatePlayerIsAlive()
+        {
+
+            for (int i = 0; i < playerStates.Count; i++)
+            {
+                if (playerStates[i].IsAlive && playerStates[i].HasDoneFirstAction)
+                {
+                    if (playerStates[i].Score < 1)
+                    {
+                        Debug.Log($"Player dies {playerStates[i].PlayerName} ({playerStates[i].ClientId})");
+                        playerStates[i] = new PlayerState(playerStates[i])
+                        {
+                            IsAlive = false
+                        };
+                    }
+                }
+            }
         }
 
+        private void HostShutdown()
+        {
+            ShutdownClientRpc();
+        }
+
+        private void Shutdown()
+        {
+            NetworkManager.Singleton.Shutdown();
+            LoadingSceneManager.Instance.LoadScene(SceneName.MainMenuScene, false);
+        }
+
+        [ClientRpc]
+        private void ShutdownClientRpc()
+        {
+            //if (IsServer)
+            //    return;
+
+            Shutdown();
+        }
+
+        public void ExitToMenu()
+        {
+            if (IsServer)
+            {
+                HostShutdown();
+            }
+            else
+            {
+                NetworkManager.Singleton.Shutdown();
+                LoadingSceneManager.Instance.LoadScene(SceneName.MainMenuScene, false);
+            }
+        }
     }
 }

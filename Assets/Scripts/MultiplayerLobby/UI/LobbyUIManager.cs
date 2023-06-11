@@ -28,7 +28,6 @@ namespace Multiplayer.Lobby.UI
                 lobbyPlayers.OnListChanged += HandleLobbyPlayersStateChanged;
             }
 
-            Debug.Log($"OnNetworkSpawn IsClient-{IsClient} IsServer-{IsServer} IsHost-{IsHost}");
             if (IsServer)
             {
                 startGameButton.gameObject.SetActive(true);
@@ -129,6 +128,7 @@ namespace Multiplayer.Lobby.UI
             if (!IsEveryoneReady()) { return; }
 
             Dictionary<string, PlayerData> newClientData = new() { };
+            var teamsDataList = GetComponent<TeamPicker>().TeamsDataList;
             foreach (var lobbyPlayer in lobbyPlayers)
             {
                 var playerData = ServerGameNetPortal.Instance.GetPlayerData(lobbyPlayer.ClientId);
@@ -136,7 +136,12 @@ namespace Multiplayer.Lobby.UI
 
                 if (playerData != null && playerGuid != null)
                 {
-                    newClientData.Add(playerGuid, new PlayerData(playerData.Value.PlayerName, playerData.Value.ClientId, lobbyPlayer.PlayerColor));
+                    string name = playerData.Value.PlayerName;
+                    if (name.Trim().Length == 0)
+                    {
+                        name = teamsDataList[(int)playerData.Value.ClientId].TeamName;
+                    }
+                    newClientData.Add(playerGuid, new PlayerData(name, playerData.Value.ClientId, lobbyPlayer.PlayerColor));
                 }
             }
 

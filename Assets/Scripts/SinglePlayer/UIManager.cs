@@ -29,7 +29,7 @@ namespace Singleplayer
         public void AddPlayerCard(PlayerState playerState)
         {
             GameObject newPlayerCard = Instantiate(m_playerCardPrefab);
-            newPlayerCard.transform.SetParent(m_playersCardListUI.GetComponentInChildren<VerticalLayoutGroup>().transform, false);
+            newPlayerCard.transform.SetParent(m_playersCardListUI.GetComponentInChildren<GridLayoutGroup>().transform, false);
             var newPlayerCardScriptComponent = newPlayerCard.GetComponent<PlayerCard>();
             newPlayerCardScriptComponent.InitDisplay(playerState);
             m_playerCards.Add(playerState.ClientId, newPlayerCardScriptComponent);
@@ -52,13 +52,10 @@ namespace Singleplayer
 
         public void DisablePlayerCard(PlayerState playerState)
         {
-            foreach (var key in m_playerCards.Keys)
+            if (m_playerCards.ContainsKey(playerState.ClientId))
             {
-                if (m_playerCards.ContainsKey(playerState.ClientId))
-                {
-                    m_playerCards[key].DisableDisplay();
-                    return;
-                }
+                m_playerCards[playerState.ClientId].DisableDisplay();
+                return;
             }
             Debug.Log($"Warning: DisablePlayerCard: Player Card doea not exist for player - {playerState.ClientId}");
         }
@@ -79,6 +76,16 @@ namespace Singleplayer
             m_pauseMenuUI.SetActive(false);
             m_pauseButton.SetActive(false);
             m_winnerText.GetComponent<TextMeshProUGUI>().text = message;
+        }
+
+        public void OnClickPause()
+        {
+            GameManager.Instance.OnPauseClick();
+
+        }
+        public void OnClickLeave()
+        {
+            GameManager.Instance.LeaveGame();
         }
     }
 }

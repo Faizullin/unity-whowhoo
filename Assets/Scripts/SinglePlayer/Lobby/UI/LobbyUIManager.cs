@@ -55,7 +55,7 @@ namespace Singleplayer.Lobby.UI
             {
                 if (item.IsReady)
                 {
-                    var newVal = new LobbyPlayerState(item.ClientId, item.PlayerName, item.IsReady, item.PlayerColor);
+                    var newVal = new LobbyPlayerState(item.ClientId + 1, item.PlayerName, item.IsReady, item.PlayerColor);
                     if (newVal.PlayerName.Trim().Length == 0)
                     {
                         newVal.PlayerName = teamsDataList[(int)item.ClientId].TeamName;
@@ -72,9 +72,15 @@ namespace Singleplayer.Lobby.UI
             LoadingSceneManager.Instance.LoadScene(SceneName.SingleplayerScene, false);
         }
 
-        public void OnLeaveClicked()
+        public void OnClickLeave()
         {
+            LoadingSceneManager.Instance.LoadScene(SceneName.MainMenuScene, false);
             // GameNetPortal.Instance.RequestDisconnect();
+        }
+
+        public void OnClickStartGame()
+        {
+            StartGame();
         }
 
         public void OnStartGameClicked()

@@ -14,7 +14,7 @@ namespace Singleplayer.Player.UI
 
         public void InitDisplay(PlayerState playerState)
         {
-            m_playerNameText.text = playerState.PlayerName.ToString();
+            m_playerNameText.text = playerState.PlayerName;
             m_playerNameText.color = playerState.PlayerColor;
             m_playerScoreText.text = playerState.Score.ToString();
             m_playerScoreText.color = playerState.PlayerColor;
